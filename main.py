@@ -157,11 +157,12 @@ def send_email(subject, body):
     msg = MIMEText(body)
     msg["Subject"] = subject
     msg["From"] = email_user
-    msg["To"] = email_to
+    msg["To"] = ", ".join(email_to.split(","))
 
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(email_user, email_password)
-        server.send_message(msg)
+        recipients = [email.strip() for email in email_to.split(",")]
+        server.sendmail(email_user, recipients, msg.as_string())
 
 
 def main():

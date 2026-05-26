@@ -1,0 +1,42 @@
+name: Executive Change Alerts
+
+on:
+  schedule:
+    # Runs every day at 8 AM Eastern during standard time
+    - cron: "0 13 * * *"
+
+  workflow_dispatch:
+
+jobs:
+  run-alerts:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run alert script
+        run: python main.py
+        env:
+          EMAIL_USER: ${{ secrets.EMAIL_USER }}
+          EMAIL_APP_PASSWORD: ${{ secrets.EMAIL_APP_PASSWORD }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+
+      - name: Commit updated seen.json
+        run: |
+          git config user.name "exec-alert-bot"
+          git config user.email "bot@example.com"
+
+          git add seen.json
+
+          git commit -m "Update seen alerts" || echo "No changes"
+
+          git push

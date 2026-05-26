@@ -103,6 +103,7 @@ def get_google_alert_items():
             link = entry.get("link", "")
             summary = entry.get("summary", "")
             published = entry.get("published", "")
+            detail = get_sec_filing_detail(link)
 
             combined_text = f"{title} {summary}"
 
@@ -113,6 +114,7 @@ def get_google_alert_items():
                 ):
                 items.append({
                     "source": "Google Alerts",
+                    "detail": detail,
                     "title": BeautifulSoup(title, "html.parser").get_text(),
                     "link": link,
                     "published": published,
@@ -154,7 +156,43 @@ def get_sec_8k_items():
 
     return items
 
+def get_sec_filing_detail(index_url):
+    try:
+        headers = {
+            "User-Agent": "ExecutiveChangeAlertBot/1.0 emily.charles.2004@gmail.com"
+        }
 
+        page = requests.get(index_url, headers=headers, timeout=20)
+        page.raise_for_status()
+
+        soup = BeautifulSoup(page.text, "html.parser")
+
+        filing_link = None
+        for a in soup.find_all("a", href=True):
+            href = a["href"]
+            if href.endswith(".htm") and "index" not in href:
+                filing_link = "https://www.sec.gov" + href
+                break
+
+        if not filing_link:
+            return ""
+
+        filing = requests.get(filing_link, headers=headers, timeout=20)
+        filing.raise_for_status()
+
+        text = BeautifulSoup(filing.text, "html.parser").get_text(" ")
+        text = " ".join(text.split())
+
+        idx = text.lower().find("item 5.02")
+        if idx == -1:
+            return ""
+
+        snippet = text[idx:idx + 900]
+        return snippet
+
+    except Exception:
+        return ""
+    
 def make_email_body(new_items):
     if not new_items:
         return "No new executive-change alerts found today."
@@ -167,6 +205,10 @@ def make_email_body(new_items):
     for item in new_items:
         lines.append(f"• {item['title']}")
         lines.append(f"  Source: {item['source']}")
+
+        if item.get("detail"):
+            lines.append(f"  What happened: {item['detail'][:700]}")
+
         lines.append(f"  Link: {item['link']}")
         lines.append("")
 

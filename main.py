@@ -3,6 +3,8 @@ import os
 import smtplib
 from email.mime.text import MIMEText
 from pathlib import Path
+import re
+from datetime import datetime, timedelta, timezone
 
 import feedparser
 import requests
@@ -29,6 +31,13 @@ ROLE_WORDS = [
     "board",
     "director",
 ]
+BLOCKED_DOMAINS = [
+    "youtube.com",
+    "youtu.be",
+    "facebook.com",
+    "instagram.com",
+    "tiktok.com",
+]
 
 EVENT_WORDS = [
     "resigns",
@@ -54,10 +63,26 @@ def load_seen():
             return set(json.load(f))
     return set()
 
+def is_blocked_link(link):
+    return any(domain in link.lower() for domain in BLOCKED_DOMAINS)
 
 def save_seen(seen):
     with open(SEEN_FILE, "w") as f:
         json.dump(sorted(list(seen)), f, indent=2)
+
+def is_recent(published_str, hours=24):
+    try:
+        published = datetime.strptime(
+            published_str,
+            "%Y-%m-%dT%H:%M:%SZ"
+        ).replace(tzinfo=timezone.utc)
+
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+
+        return published >= cutoff
+
+    except Exception:
+        return False
 
 
 def is_relevant(text):
@@ -81,7 +106,11 @@ def get_google_alert_items():
 
             combined_text = f"{title} {summary}"
 
-            if is_relevant(combined_text):
+            if (
+                is_relevant(combined_text)
+                and not is_blocked_link(link)
+                and is_recent(published)
+                ):
                 items.append({
                     "source": "Google Alerts",
                     "title": BeautifulSoup(title, "html.parser").get_text(),
@@ -130,24 +159,20 @@ def make_email_body(new_items):
     if not new_items:
         return "No new executive-change alerts found today."
 
-    lines = ["Executive Change Alerts", ""]
+    lines = []
+    lines.append("DAILY EXECUTIVE CHANGE ALERTS")
+    lines.append("=" * 40)
+    lines.append("")
 
-    for i, item in enumerate(new_items, start=1):
-        lines.append(f"{i}. {item['title']}")
-        lines.append(f"Source: {item['source']}")
-
-        if item.get("published"):
-            lines.append(f"Published: {item['published']}")
-
-        lines.append(f"Link: {item['link']}")
-
-        if item.get("summary"):
-            lines.append(f"Summary: {item['summary'][:500]}")
-
+    for item in new_items:
+        lines.append(f"• {item['title']}")
+        lines.append(f"  Source: {item['source']}")
+        lines.append(f"  Link: {item['link']}")
         lines.append("")
 
-    return "\n".join(lines)
+    lines.append(f"Total Alerts: {len(new_items)}")
 
+    return "\n".join(lines)
 
 def send_email(subject, body):
     email_user = os.environ["EMAIL_USER"]
@@ -164,6 +189,27 @@ def send_email(subject, body):
         recipients = [email.strip() for email in email_to.split(",")]
         server.sendmail(email_user, recipients, msg.as_string())
 
+def normalize_title(title):
+    title = title.lower()
+
+    # remove punctuation
+    title = re.sub(r"[^\w\s]", "", title)
+
+    # remove common filler words
+    remove_words = [
+        "ceo",
+        "cfo",
+        "chief executive officer",
+        "steps down",
+        "resigns",
+        "appointed",
+    ]
+
+    for word in remove_words:
+        title = title.replace(word, "")
+
+    return " ".join(title.split())
+
 
 def main():
     seen = load_seen()
@@ -173,8 +219,15 @@ def main():
     all_items.extend(get_sec_8k_items())
 
     new_items = []
+    seen_titles = set()
     for item in all_items:
         item_id = item["link"]
+        
+        normalized = normalize_title(item["title"])
+
+        if normalized in seen_titles:
+            continue
+        seen_titles.add(normalized)
 
         if item_id not in seen:
             new_items.append(item)

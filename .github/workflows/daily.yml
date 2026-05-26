@@ -3,7 +3,7 @@ name: Executive Change Alerts
 on:
   schedule:
     # Runs every day at 8 AM Eastern during standard time
-    - cron: "0 13 * * *"
+    - cron: "13 11 * * *"
 
   workflow_dispatch:
 

@@ -3,7 +3,7 @@ name: Executive Change Alerts
 on:
   schedule:
     # Runs every day at 8 AM Eastern during standard time
-    - cron: "13 11 * * *"
+    - cron: "0 8 * * *"
 
   workflow_dispatch:
 
@@ -28,7 +28,6 @@ jobs:
         env:
           EMAIL_USER: ${{ secrets.EMAIL_USER }}
           EMAIL_APP_PASSWORD: ${{ secrets.EMAIL_APP_PASSWORD }}
-          EMAIL_TO: ${{ secrets.EMAIL_TO }}
 
       - name: Commit updated seen.json
         run: |

@@ -57,11 +57,33 @@ EVENT_WORDS = [
 ]
 
 
+
 def load_seen():
     if SEEN_FILE.exists():
         with open(SEEN_FILE, "r") as f:
             return set(json.load(f))
     return set()
+def is_public_company(text):
+    headers = {
+        "User-Agent": "ExecutiveChangeAlertBot/1.0 emily.charles.2004@gmail.com"
+    }
+
+    try:
+        url = "https://www.sec.gov/files/company_tickers.json"
+        data = requests.get(url, headers=headers, timeout=20).json()
+
+        text = text.lower()
+
+        for company in data.values():
+            company_name = company["title"].lower()
+
+            if company_name in text:
+                return True
+
+        return False
+
+    except Exception:
+        return True  # fail open
 
 def is_blocked_link(link):
     return any(domain in link.lower() for domain in BLOCKED_DOMAINS)
@@ -109,9 +131,10 @@ def get_google_alert_items():
 
             if (
                 is_relevant(combined_text)
+                and is_public_company(combined_text)
                 and not is_blocked_link(link)
                 and is_recent(published)
-                ):
+            ):
                 items.append({
                     "source": "Google Alerts",
                     "detail": detail,
@@ -216,19 +239,27 @@ def make_email_body(new_items):
 
     return "\n".join(lines)
 
+def load_recipients():
+    with open("recipients.txt", "r") as f:
+        return [
+            line.strip()
+            for line in f
+            if line.strip() and not line.strip().startswith("#")
+        ]
+
+
 def send_email(subject, body):
     email_user = os.environ["EMAIL_USER"]
     email_password = os.environ["EMAIL_APP_PASSWORD"]
-    email_to = os.environ["EMAIL_TO"]
+    recipients = load_recipients()
 
     msg = MIMEText(body)
     msg["Subject"] = subject
     msg["From"] = email_user
-    msg["To"] = ", ".join(email_to.split(","))
+    msg["To"] = ", ".join(recipients)
 
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(email_user, email_password)
-        recipients = [email.strip() for email in email_to.split(",")]
         server.sendmail(email_user, recipients, msg.as_string())
 
 def normalize_title(title):
